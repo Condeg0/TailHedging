@@ -2,33 +2,17 @@
 library(quantmod)
 library(lubridate)
 library(ggplot2)
-library(dplyr)
+
 setwd("/home/rafaelconde/Research/Stock Market Return Distribution and Hedging/")
+
+
+start_date <- "1975-01-01"
+end_date <- Sys.Date()
 
 
 # ===== RETURN AND BOOSTRAP FUNCTION =====
 # Gets an xts object as a dataset and an integer to serve as money invested
-get_return <- function(data, amt) {
-  # clean data set
-  colnames(data) <- c("Open", "High", "Low", "Close", "Volume", "Adjusted")
-  data <- data.frame(data)
-  data <- na.omit(data)
-  amt_vec <- c()
-  
-  # get open and close price to calculate return
-  data$Return <- (data$Close / data$Open) -1  # calculate return in decimals
-  #data$Return <- (data$Return - 1)   # format return to percentage
-  
-  for (n in data$Return) {
-    amt <- (amt * n) + amt
-    amt_vec <- c(amt_vec, amt)
-  }
-  data$Total_Profit <- round(amt_vec, 2)
-  data$Return <- round(data$Return, 3)
-  data$Date <- rownames(data)
-    
-  return(data) 
-}
+
 
 # Gets a data frame with frequencies (dplyr) and returns it trimmed
 trim_distribution <- function(data, upper_limit, lower_limit) {
@@ -86,93 +70,122 @@ bootstrap <- function(n_bootstrap, days, returns, probabilities) {
 #write.csv(bootstrap(10000, 180, return_vec, probability_vec), "Possible_Returns_Paths.csv")
 
 # ===== GET THE RETURN DISTRIBUTIONS =====
+SPX <- getSymbols("^SPX", from = start_date, to = end_date, auto.assign = FALSE, periodicity = "daily", src="yahoo")
+
 # Get SP500 information
-sp500_daily <- get_return(getSymbols("^SPX", from = "1990-01-01", to = Sys.Date(), auto.assign = FALSE, periodicity = "daily", src="yahoo"), 100)
-sp500_weekly <- get_return(getSymbols("^SPX", from = "1990-01-01", to = Sys.Date(), auto.assign = FALSE, periodicity = "weekly", src="yahoo"), 100)
-sp500_monthly <- get_return(getSymbols("^SPX", from = "1990-01-01", to = Sys.Date(), auto.assign = FALSE, periodicity = "monthly", src="yahoo"), 100)
-sp500_daily$Return <- round(sp500_daily$Return * 100, 1)
-sp500_weekly$Return <- round(sp500_weekly$Return * 100, 1)
-sp500_monthly$Return <- round(sp500_monthly$Return * 100, 1)
+# Calculate returns
+arithmetic_returns <- data.frame(allReturns(SPX, type = "arithmetic"))
+arithmetic_returns$Date <- as.Date(rownames(arithmetic_returns))
+log_returns <- data.frame(allReturns(SPX, type = "log"))
+log_returns$Date <- as.Date(rownames(log_returns))
+
+
+# Daily returns
+sp500_daily <- data.frame(cbind(SPX, Return = 100 * (arithmetic_returns$daily - 1) + 100))
+sp500_daily$Date <- as.Date(rownames(sp500_daily)) 
+sp500_daily <- na.omit(sp500_daily)
+
+# Weekly returns
+sp500_weekly <- data.frame(cbind(SPX, Return = 100 * (arithmetic_returns$weekly - 1) + 100))
+sp500_weekly <- na.omit(sp500_weekly)
+sp500_weekly$Date <- as.Date(rownames(sp500_weekly))
+sp500_weekly <- sp500_weekly[-1, ]
 
 # Monthly returns
-monthly_return_distribution <- sp500_monthly %>% 
-  group_by(Return) %>%
-  dplyr::summarise(Frequency = n())
-monthly_return_distribution$Probability <- 100 * (monthly_return_distribution$Frequency / sum(monthly_return_distribution$Frequency))
-monthly_hist <- trim_distribution(monthly_return_distribution, 4.4, -4.2)
-# Weekly returns
-weekly_return_distribution <- sp500_weekly %>%
-  group_by(Return) %>%
-  dplyr::summarize(Frequency = n())
-weekly_return_distribution$Probability <- 100 * (weekly_return_distribution$Frequency / sum(weekly_return_distribution$Frequency))
-weekly_hist <- weekly_return_distribution
-weekly_hist <- trim_distribution(weekly_hist, 4.4, -4.2)
-# Daily returns
-daily_return_distribution <- sp500_daily %>%
-  group_by(Return) %>%
-  dplyr::summarize(Frequency = n())
-daily_return_distribution$Probability <- round((daily_return_distribution$Frequency / sum(daily_return_distribution$Frequency)) * 100, 3)
-daily_hist <- trim_distribution(daily_return_distribution, 4.4, -4.2)
+sp500_monthly <- data.frame(cbind(SPX, Return = 100 * (arithmetic_returns$monthly - 1) + 100))
+sp500_monthly <- na.omit(sp500_monthly)
+sp500_monthly$Date <- as.Date(rownames(sp500_monthly))
+sp500_monthly <- data.frame(sp500_monthly[-1, ])
+
+# Quarterly returns
+sp500_quarterly <- data.frame(cbind(SPX, Return = 100 * (arithmetic_returns$quarterly - 1) + 100))
+sp500_quarterly <- na.omit(sp500_quarterly)
+sp500_quarterly$Date <- as.Date(rownames(sp500_quarterly))
+sp500_quarterly <- sp500_quarterly[-1, ]
+
+# Yearly returns
+sp500_yearly <- data.frame(cbind(SPX, Return = 100 * (arithmetic_returns$yearly - 1) + 100))
+sp500_yearly <- na.omit(sp500_yearly)
+sp500_yearly$Date <- as.Date(rownames(sp500_yearly))
+sp500_yearly <- sp500_yearly[-1, ]
 
 
-# Save daily_return_distribution to a csv file
-write.csv(daily_return_distribution, file = "Distribution_of_Daily_Returns.csv")
-write.csv(monthly_return_distribution, file = "Distribution_of_Monthly_Returns.csv")
 
 
 # ===== GRAPH RETURN DISTRIBUTIONS ===== 
-# SPX monthly return distribution expanded
-ggplot(data = monthly_hist, aes(x = Return, y = Probability)) +
-  geom_bar(stat = "identity", fill = "steelblue", color = "black") +
-  scale_y_continuous(breaks = seq(min(monthly_hist$Probability), max(monthly_hist$Probability), by = 1)) +
-  scale_x_continuous(breaks = seq(-4.2, 4.5, by = 0.2)) +
-  ggtitle("SPX Monhly Return Distribution") +
-  labs(x = "Return", y = "Probability Frequency")
-# monthly S&P50 distribution
-ggplot(data = sp500_monthly, aes(x = Return)) +
-  geom_histogram(aes(y = ..count.. / sum(..count..)), binwidth = 1, fill = "blue",
-                 color = "black", alpha = 0.7) +
-  geom_text(stat = "bin", aes(y = ..count.. / sum(..count..),
-                              label = scales::percent(..count.. / sum(..count..))), vjust = -0.5, binwidth = 1) +
-  labs(x = "Return", y = "Probability Density") +
-  ggtitle("S&P500 Monthly Return Distribution") +
-  scale_x_continuous(limits = c(-18, 12), breaks = seq(-18, 12, by = 1))
+# SPX daily return distribution 
+ggplot(sp500_daily, aes(x = Return)) + 
+  geom_histogram(aes(y = ..count..), bins = 20, fill = "blue", color = "black", alpha = 0.7) + 
+  geom_text(stat='bin', aes(y = ..count.., label = ..count..), vjust = -2.5, bins = 20) + 
+  geom_text(stat='bin', aes(y = ..count.., label = scales::percent(..count../sum(..count..))), 
+            vjust = -0.5, bins = 20) +
+  labs(title = "Stock Daily Returns Histogram", x = "Returns", y = "Frequency") +
+  scale_x_continuous(breaks = seq(round(min(sp500_daily$Return)), round(max(sp500_daily$Return)), by = 2))
 
 
-# SPX weekly return distribution expanded
-ggplot(data = weekly_hist, aes(x = Return, y = Probability)) +
-  geom_bar(stat = "identity", fill = "steelblue", color = "black") +
-  scale_y_continuous(breaks = seq(min(weekly_hist$Return), max(weekly_hist$Return), by = 0.2)) +
-  scale_x_continuous(breaks = seq(-4.2, 4.5, by = 0.2)) +
-  ggtitle("SPX Weekly Return Distribution") + 
-  labs(x = "Return", y = "Probability Frequency")
-# weekly S&P50 distribution
-ggplot(data = sp500_weekly, aes(x = Return)) +
-  geom_histogram(aes(y = ..count.. / sum(..count..)), binwidth = 1, fill = "blue",
-                 color = "black", alpha = 0.7) +
-  geom_text(stat = "bin", aes(y = ..count.. / sum(..count..),
-                              label = scales::percent(..count.. / sum(..count..))), vjust = -0.5, binwidth = 1) +
-  labs(x = "Return", y = "Probability Density") +
-  ggtitle("S&P500 Weekly Return Distribution") +
-  scale_x_continuous(limits = c(-18, 12), breaks = seq(-18, 12, by = 1))
+# SPX weekly return distribution 
+ggplot(sp500_weekly, aes(x = Return)) + 
+  geom_histogram(aes(y = ..count..), bins = 20, fill = "blue", color = "black", alpha = 0.7) + 
+  geom_text(stat='bin', aes(y = ..count.., label = ..count..), vjust = -2.5, bins = 20) + 
+  geom_text(stat='bin', aes(y = ..count.., label = scales::percent(..count../sum(..count..))), 
+            vjust = -0.5, bins = 20) +
+  labs(title = "Stock Weekly Returns Histogram", x = "Returns", y = "Frequency") +
+  scale_x_continuous(breaks = seq(round(min(sp500_weekly$Return)), round(max(sp500_weekly$Return)), by = 2))
 
 
-# daily SPX histogram expanded
-ggplot(data = daily_hist, aes(x = Return, y = Probability)) +
-  geom_bar(stat = "identity", fill = "steelblue", color = "black") +
-  scale_x_continuous(breaks = seq(min(daily_hist$Return), max(daily_hist$Return), by = 0.2)) +
-  scale_y_continuous(breaks = seq(min(daily_hist$Probability), max(daily_hist$Probability), by = 0.3)) +
-  ggtitle("Frequency Distribution of SPX Daily Return") +
-  labs(x = "Return (%)", y = "Probability Frequency")
-# Daily S&P50 distribution - simplified
-ggplot(data = sp500_daily, aes(x = Return)) +
-  geom_histogram(aes(y = ..count.. / sum(..count..)), binwidth = 1, fill = "blue",
-                 color = "black", alpha = 0.7) +
-  geom_text(stat = "bin", aes(y = ..count.. / sum(..count..),
-                              label = scales::percent(..count.. / sum(..count..))), vjust = -0.5, binwidth = 1) +
-  labs(x = "Return", y = "Probability Density") +
-  ggtitle("S&P500 Daily Return Distribution") +
-  scale_x_continuous(limits = c(-10, 12), breaks = seq(-10, 12, by = 1))
+# SPX monthly return distribution 
+ggplot(sp500_monthly, aes(x = Return)) + 
+  geom_histogram(aes(y = ..count..), bins = 20, fill = "blue", color = "black", alpha = 0.7) + 
+  geom_text(stat='bin', aes(y = ..count.., label = ..count..), vjust = -2.5, bins = 20) + 
+  geom_text(stat='bin', aes(y = ..count.., label = scales::percent(..count../sum(..count..))), 
+            vjust = -0.5, bins = 20) +
+  labs(title = "Stock Monthly Returns Histogram", x = "Returns", y = "Frequency") +
+  scale_x_continuous(breaks = seq(round(min(sp500_monthly$Return)), round(max(sp500_monthly$Return)), by = 2))
 
 
+# Quarterly returns
+ggplot(sp500_quarterly, aes(x = Return)) + 
+  geom_histogram(aes(y = ..count..), bins = 20, fill = "blue", color = "black", alpha = 0.7) + 
+  geom_text(stat='bin', aes(y = ..count.., label = ..count..), vjust = -2.5, bins = 20) + 
+  geom_text(stat='bin', aes(y = ..count.., label = scales::percent(..count../sum(..count..))), 
+            vjust = -0.5, bins = 20) +
+  labs(title = "Stock Quarterly Returns Histogram", x = "Returns", y = "Frequency") +
+  scale_x_continuous(breaks = seq(round(min(sp500_quarterly$Return)), round(max(sp500_quarterly$Return)), by = 2))
+
+
+# SPX annual return distribution
+ggplot(sp500_yearly, aes(x = Return)) + 
+  geom_histogram(aes(y = ..count..), bins = 20, fill = "blue", color = "black", alpha = 0.7) + 
+  geom_text(stat='bin', aes(y = ..count.., label = ..count..), vjust = -2.5, bins = 20) + 
+  geom_text(stat='bin', aes(y = ..count.., label = scales::percent(..count../sum(..count..))), 
+            vjust = -0.5, bins = 20) +
+  labs(title = "Stock Annual Returns Histogram", x = "Returns", y = "Frequency") +
+  scale_x_continuous(breaks = seq(round(min(sp500_yearly$Return)), round(max(sp500_yearly$Return)), by = 2))
+  
+
+# ====== GRAPH VARIANCE OF RETURNS =====
+# Daily
+ggplot(data = arithmetic_returns, aes(x = Date)) +
+  geom_line(aes(y = daily)) +
+  labs(title = "Daily Variance of Returns", x = "Date", y =  "Variance")
+
+# Weekly
+ggplot(data = sp500_weekly, aes(x = Date, y = 1 + ( Return / 100 ))) +
+  geom_line() +
+  labs(title = "Weekly Variance of Returns", x = "Date", y =  "Variance")
+
+# Monthly
+ggplot(data = sp500_monthly, aes(x = Date, y = 1 + ( Return / 100 ))) +
+  geom_line() +
+  labs(title = "Monthly Variance of Returns", x = "Date", y =  "Variance")
+
+# Quarterly
+ggplot(data = sp500_quarterly, aes(x = Date, y = 1 + ( Return / 100 ))) +
+  geom_line() +
+  labs(title = "Quarterly Variance of Returns", x = "Date", y = "Variance")
+
+# Annual
+ggplot(data = sp500_yearly, aes(x = Date, y = 1 + ( Return / 100 ))) +
+  geom_line() +
+  labs(title = "Annual Variance of Returns", x = "Date", y = "Variance")
 
