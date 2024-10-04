@@ -2,7 +2,9 @@
 library(quantmod)
 library(lubridate)
 library(ggplot2)
-
+library(dplyr)
+library(pracma)
+library(evir)
 setwd("/home/rafaelconde/Research/Stock Market Return Distribution and Hedging/")
 
 
@@ -10,64 +12,6 @@ start_date <- "1975-01-01"
 end_date <- Sys.Date()
 
 
-# ===== RETURN AND BOOSTRAP FUNCTION =====
-# Gets an xts object as a dataset and an integer to serve as money invested
-
-
-# Gets a data frame with frequencies (dplyr) and returns it trimmed
-trim_distribution <- function(data, upper_limit, lower_limit) {
-  frequency_vec <-c()
-  # trim lower returns
-  sum_frequencies <- sum(data$Frequency[data$Return < lower_limit])
-  data$Frequency[data$Return == lower_limit] <- data$Frequency[data$Return == lower_limit] + sum_frequencies
-  data <- data[!data$Return < lower_limit, ]
-  # trim upper returns
-  sum_frequencies <- sum(data$Frequency[data$Return > upper_limit])
-  data$Frequency[data$Return == upper_limit] <- data$Frequency[data$Return == upper_limit] + sum_frequencies
-  data <- data[!data$Return > upper_limit, ]
-  # calculate probability
-  data$Probability <- round((data$Frequency / sum(data$Frequency)) * 100, 1)
-  
-  return(data)
-}
-
-# Models different scenarios of returns 
-bootstrap <- function(n_bootstrap, days, returns, probabilities) {
-  # takes 4 parameters
-  # n_bootstrap (integers): number of times to replicate process, i.e possible paths
-  # days (integers): number of days/ scenarios, i.e 1 to "days"
-  # returns (vector): possible (registered) returns
-  # probabilities (vector): probability of each given (registered) return
-  
-  # create data frame to hold path information
-  paths <- data.frame(nrow=20, ncol=10000)
-  returns <- (returns / 100) + 1
-
-  
-  # simulate possible paths for 1 to 180 days
-  for (num in 1:days) {
-    
-    # Get a return (randomly) for the defined (n_bootstrap) times
-    result <- replicate(n_bootstrap, {
-      # Get a sample of returns
-      sampled_returns <- sample(x = returns, size = num, replace = TRUE, prob = probability_vec)
-      as.numeric(prod(sampled_returns))  # multiply all items in vector
-      })
-    
-    paths <- cbind(paths, result)  # add result to paths
-  }
-  
-  # Prettify data
-  paths <- paths[, -1:-2]  # remove first two columns
-  names <- paste(seq(1, days), "days")  # create vector with column names
-  colnames(paths) <- names
-  
-  return(paths)
-}
-
-
-# ===== APPLY BOOTSTRAP =====
-#write.csv(bootstrap(10000, 180, return_vec, probability_vec), "Possible_Returns_Paths.csv")
 
 # ===== GET THE RETURN DISTRIBUTIONS =====
 SPX <- getSymbols("^SPX", from = start_date, to = end_date, auto.assign = FALSE, periodicity = "daily", src="yahoo")
@@ -188,4 +132,78 @@ ggplot(data = sp500_quarterly, aes(x = Date, y = 1 + ( Return / 100 ))) +
 ggplot(data = sp500_yearly, aes(x = Date, y = 1 + ( Return / 100 ))) +
   geom_line() +
   labs(title = "Annual Variance of Returns", x = "Date", y = "Variance")
+
+
+
+
+# ===== BOOSTRAP =====
+# Models different scenarios of returns 
+bootstrap <- function(n_bootstrap, days, returns, probabilities) {
+  # takes 4 parameters
+  # n_bootstrap (integers): number of times to replicate process, i.e possible paths
+  # days (integers): number of days/ scenarios, i.e 1 to "days"
+  # returns (vector): possible (registered) returns
+  # probabilities (vector): probability of each given (registered) return
+  
+  # create data frame to hold path information
+  paths <- data.frame(nrow=20, ncol=10000)
+  returns <- (returns / 100) + 1
+
+  
+  # simulate possible paths for 1 to 180 days
+  for (num in 1:days) {
+    
+    # Get a return (randomly) for the defined (n_bootstrap) times
+    result <- replicate(n_bootstrap, {
+      # Get a sample of returns
+      sampled_returns <- sample(x = returns, size = num, replace = TRUE, prob = probabilities)
+      as.numeric(prod(sampled_returns))  # multiply all items in vector
+      })
+    
+    paths <- cbind(paths, result)  # add result to paths
+  }
+  
+  # Prettify data
+  paths <- paths[, -1:-2]  # remove first two columns
+  names <- paste(seq(1, days), "days")  # create vector with column names
+  colnames(paths) <- names
+  
+  return(paths)
+}
+
+# Daily returns
+daily_return_distribution <- sp500_daily %>%
+  group_by(Return) %>%
+  dplyr::summarize(Frequency = n())
+daily_return_distribution$Probability <- round((daily_return_distribution$Frequency / sum(daily_return_distribution$Frequency)) * 100, 3)
+
+# Weekly returns
+weekly_return_distribution <- sp500_weekly %>%
+  group_by(Return) %>%
+  dplyr::summarize(Frequency = n())
+weekly_return_distribution$Probability <- 100 * (weekly_return_distribution$Frequency / sum(weekly_return_distribution$Frequency))
+
+# Monthly returns
+monthly_return_distribution <- sp500_monthly %>% 
+  group_by(Return) %>%
+  dplyr::summarise(Frequency = n())
+monthly_return_distribution$Probability <- 100 * (monthly_return_distribution$Frequency / sum(monthly_return_distribution$Frequency))
+
+# Quarterly returns
+quarterly_return_distribution <- sp500_quarterly %>% 
+  group_by(Return) %>%
+  dplyr::summarise(Frequency = n())
+quarterly_return_distribution$Probability <- 100 * (quarterly_return_distribution$Frequency / sum(quarterly_return_distribution$Frequency))
+
+# Yearly returns
+yearly_return_distribution <- sp500_yearly %>% 
+  group_by(Return) %>%
+  dplyr::summarise(Frequency = n())
+yearly_return_distribution$Probability <- 100 * (yearly_return_distribution$Frequency / sum(yearly_return_distribution$Frequency))
+
+
+# Apply bootstrap
+write.csv(bootstrap(10000, 180, daily_return_distribution$Return, daily_return_distribution$Probability), "Possible_Returns_PathsTEST.csv")
+
+
 
