@@ -5,6 +5,9 @@ library(ggplot2)
 library(dplyr)
 library(pracma)
 library(evir)
+library(tseries)
+library(moments)
+library(nortest)
 setwd("/home/rafaelconde/Research/Stock Market Return Distribution and Hedging/")
 
 
@@ -203,7 +206,118 @@ yearly_return_distribution$Probability <- 100 * (yearly_return_distribution$Freq
 
 
 # Apply bootstrap
-write.csv(bootstrap(10000, 180, daily_return_distribution$Return, daily_return_distribution$Probability), "Possible_Returns_PathsTEST.csv")
+#write.csv(bootstrap(10000, 180, daily_return_distribution$Return, daily_return_distribution$Probability), "Possible_Returns_PathsTEST.csv")
 
 
+# ===== STATISTICAL TESTS - DO RETURNS FOLLOW A GAUSSIAN CURVE =====
+# Standard deviation
+measures_df <- data.frame(Daily = c(sd(sp500_daily$Return), unlist((hurstexp(sp500_daily$Return)))),
+                        Weekly = c(sd(sp500_weekly$Return), unlist(hurstexp(sp500_weekly$Return))),
+                        Monthly = c(sd(sp500_monthly$Return), unlist(hurstexp(sp500_monthly$Return))),
+                        Quarterly = c(sd(sp500_quarterly$Return), unlist(hurstexp(sp500_quarterly$Return))),
+                        Yearly = c(sd(sp500_yearly$Return), unlist(hurstexp(sp500_yearly$Return))))
 
+# Kurtosis
+kurtosis_vec <- c(kurtosis(sp500_daily$Return), kurtosis(sp500_weekly$Return),
+                  kurtosis(sp500_monthly$Return), kurtosis(sp500_quarterly$Return),
+                  kurtosis(sp500_yearly$Return))
+measures_df <- rbind(measures_df, kurtosis_vec)
+
+unlist(ad.test(sp500_yearly$Return))[2]
+shapiro.test(sp500_yearly$Return)
+
+# Shapiro-Wilk test
+shapiro_tests <- c(NA, unlist(shapiro.test(sp500_weekly$Return))[2],
+                   unlist(shapiro.test(sp500_monthly$Return))[2],
+                   unlist(shapiro.test(sp500_quarterly$Return))[2],
+                   unlist(shapiro.test(sp500_yearly$Return))[2])
+
+# Anderson-Darling test
+ad_tests <- c(unlist(ad.test(sp500_daily$Return))[2],
+              unlist(ad.test(sp500_weekly$Return))[2],
+              unlist(ad.test(sp500_monthly$Return))[2],
+              unlist(ad.test(sp500_quarterly$Return))[2],
+              unlist(ad.test(sp500_yearly$Return))[2])
+
+measures_df <- rbind(measures_df, shapiro_tests)
+measures_df <- rbind(measures_df, ad_tests)
+rownames(measures_df) <- c("Standard Deviation", "Simple R/S Hurst Estimation",
+                         "Corrected R over S Hurst Exponent", "Empirical Hurst Exponent",
+                         "Corrected Empirical Hurst Exponent", "Theoretical Hurst Exponent",
+                         "Kurtosis", "Shapiro-Test p-values", "Anderson-Darling test p-value")
+
+# Quantile Quantile plots for returns
+set.seed(123)
+# Daily
+# Create the theoretical normal quantiles for daily data
+qq_data_daily <- data.frame(
+  theoretical = qnorm(ppoints(length(sp500_daily$Return))),
+  sample = sort(sp500_daily$Return) )
+# Calculate percentage deviation from the normal line for daily data
+qq_data_daily <- qq_data_daily %>%
+  mutate(deviation = abs((sample - theoretical) / theoretical) * 100)
+
+# Weeks
+# Create the theoretical normal quantiles for weekly data
+qq_data_weekly <- data.frame(
+  theoretical = qnorm(ppoints(length(sp500_weekly$Return))),
+  sample = sort(sp500_weekly$Return) )
+# Calculate percentage deviation from the normal line for weekly data
+qq_data_weekly <- qq_data_weekly %>%
+  mutate(deviation = abs((sample - theoretical) / theoretical) * 100)
+
+# Months
+# Create the theoretical normal quantiles for monthly data
+qq_data_monthly <- data.frame(
+  theoretical = qnorm(ppoints(length(sp500_monthly$Return))),
+  sample = sort(sp500_monthly$Return) )
+# Calculate percentage deviation from the normal line for monhtly data
+qq_data_monthly  <- qq_data_monthly %>%
+  mutate(deviation = abs((sample - theoretical) / theoretical) * 100)
+
+# Quarters
+# Create the theoretical normal quantiles for quarterly data
+qq_data_quarterly <- data.frame(
+  theoretical = qnorm(ppoints(length(sp500_quarterly$Return))),
+  sample = sort(sp500_quarterly$Return) )
+# Calculate percentage deviation from the normal line for quarterly data
+qq_data_quarterly <- qq_data_quarterly %>%
+  mutate(deviation = abs((sample - theoretical) / theoretical) * 100)
+
+# Years
+# Create the theoretical normal quantiles for annual data
+qq_data_yearly <- data.frame(
+  theoretical = qnorm(ppoints(length(sp500_yearly$Return))),
+  sample = sort(sp500_yearly$Return) )
+# Calculate percentage deviation from the normal line for annual data
+qq_data_yearly <- qq_data_yearly %>%
+  mutate(deviation = abs((sample - theoretical) / theoretical) * 100)
+ 
+mean_sample <- 
+sd_sample <- 
+
+
+# Plot
+ggplot(data = qq_data_daily, aes(x = theoretical)) +
+  geom_point(data = qq_data_daily, aes(y = sample, color = "Daily"))+  # Plot the daily points
+  geom_point(data = qq_data_weekly, aes(y = sample, color = "Weekly"))+  # Plot the weekly points
+  geom_point(data = qq_data_monthly, aes(y = sample, color = "Monthly"))+  # Plot the monthly points
+  geom_point(data = qq_data_quarterly, aes(y = sample, color = "Quarterly"))+  # Plot the quarterly points 
+  geom_point(data = qq_data_yearly, aes(y = sample, color = "Yearly"))+  # Plot the yearly points
+  geom_abline(slope = sd(qq_data_daily$sample),
+              intercept = mean(qq_data_daily$sample), color = "blue")+  # Reference line (perfect normality) for daily returns
+  geom_abline(slope = sd(qq_data_weekly$sample),
+              intercept = mean(qq_data_weekly$sample), color = "purple")+  # Reference line (perfect normality) for weekly
+  geom_abline(slope = sd(qq_data_monthly$sample),
+              intercept = mean(qq_data_monthly$sample), color = "black")+  # Reference line (perfect normality) for weekly
+  geom_abline(slope = sd(qq_data_quarterly$sample),
+              intercept = mean(qq_data_quarterly$sample), color = "orange")+  # Reference line (perfect normality) for weekly
+  geom_abline(slope = sd(qq_data_yearly$sample),
+              intercept = mean(qq_data_yearly$sample), color = "green")+  # Reference line (perfect normality) for weekly
+  scale_y_continuous(breaks = seq(-45, 40, by = 5)) +
+  scale_x_continuous(breaks = seq(-5, 5, by = 1)) +
+  labs(title = "Q-Q Plot: Actual Returns and Returns According to a Normal Distribution",
+       x = "Theoretical Quantiles",  y = "Sample Quantiles") +
+  scale_color_manual(values = c("Daily" = "blue",  "Weekly" = "purple",  "Monthly" = "black", 
+                                "Quarterly" = "orange",  "Yearly" = "green"))
+  
