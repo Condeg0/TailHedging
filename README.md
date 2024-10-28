@@ -31,6 +31,13 @@ This repository contains an R project that focuses on advanced financial data an
   - Detailed visual representations of return distributions using ggplot2.
   - Visualization of portfolio impact and hedge effectiveness across different market scenarios.
 
+- **Portfolio Comparison:**
+  - Compared 3 different portfolios:
+      - 100% S&P500
+      - Insured Portfolio: 3% options 97% S&P500
+      - Balanced Portfolio: 40% Bonds (5% annual yield as proxy) 60% S&P500
+   - Showed that the insured portfolio maximizes portfolio CAGR (geometric average).
+
 ## Installation
 
 To run this project, you'll need to have R and the following R packages installed:
